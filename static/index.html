@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Service ☀️</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌤️ Weather Service</h1>
+            <p class="subtitle">Погода в любом городе мира</p>
+        </header>
+
+        <div class="search-section">
+            <div class="search-box">
+                <input 
+                    type="text" 
+                    id="cityInput" 
+                    placeholder="Введите город (например, Moscow, London, Tokyo)"
+                    autocomplete="off"
+                >
+                <button id="searchBtn">🔍 Узнать погоду</button>
+            </div>
+            <div id="errorMessage" class="error-message"></div>
+        </div>
+
+        <div id="weatherResult" class="weather-result hidden">
+            <div class="weather-card">
+                <div class="weather-header">
+                    <h2 id="cityName">Город</h2>
+                    <span class="weather-date" id="currentDate"></span>
+                </div>
+                <div class="weather-info">
+                    <div class="weather-main">
+                        <div class="temperature" id="temperature">--°C</div>
+                        <div class="humidity" id="humidity">💧 Влажность: --%</div>
+                    </div>
+                    <div class="weather-status" id="weatherStatus">
+                        <span class="status-badge">✅ Данные сохранены</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="history-section">
+            <div class="history-header">
+                <h2>📋 История запросов</h2>
+                <button id="refreshBtn" class="refresh-btn">🔄 Обновить</button>
+            </div>
+            <div id="historyContainer">
+                <div class="loading">Загрузка истории...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Подключаем скрипт ТОЛЬКО ОДИН РАЗ -->
+    <script src="/static/script.js"></script>
+</body>
+</html>
