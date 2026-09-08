@@ -23,6 +23,21 @@ spec:
     path: /data/weather
 
 ---
+# Source: MainChart/templates/PersistentVolume.yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+# PersistentVolumeClaim
+  name: weather-app-pvc 
+  namespace: weather
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
 # Source: MainChart/templates/Service.yaml
 apiVersion: v1
 kind: Service
@@ -67,9 +82,9 @@ spec:
     spec:
       containers:
       - name: weather-app
-        image: "docker.io/yourdockerhub/weather-app:latest"
+        image: "docker.io/temmaw/weather-app:latest"
         # Если pullPolicy: IfNotPresent, latest не будет обновляться. Использовать Always
-        imagePullPolicy: always
+        imagePullPolicy: Always
         ports:
         - containerPort: 8000
           name: http
@@ -101,7 +116,7 @@ spec:
       volumes:
       - name: storage
         persistentVolumeClaim:
-          claimName: weather-app-PersistentVolumeClaim
+          claimName: weather-app-pvc
 
 ---
 # Source: MainChart/templates/autoscaling.yaml
@@ -138,9 +153,8 @@ kind: Ingress
 metadata:
   name: weather-app-ingress
   namespace: weather
-  annotations:
-    kubernetes.io/ingress.class: traefik
 spec:
+  ingressClassName: traefik   # ← Добавить эту строку
   rules:
   - host: weather.local
     http:
