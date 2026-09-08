@@ -1,0 +1,21 @@
+namespace: weather-prod
+replicaCount: 3
+
+image:
+  repository: docker.io/temmaw/weather-app
+  tag: stable
+
+ingress:
+  enabled: true
+  host: weather.example.com
+
+persistence:
+  size: 10Gi
+
+resources:
+  requests:
+    memory: "128Mi"
+    cpu: "100m"
+  limits:
+    memory: "256Mi"
+    cpu: "200m"

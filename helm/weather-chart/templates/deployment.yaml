@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.app.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.app.name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.app.name }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.app.name }}
+    spec:
+      containers:
+      - name: {{ .Values.app.name }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        # Если pullPolicy: IfNotPresent, latest не будет обновляться. Использовать Always
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        ports:
+        - containerPort: {{ .Values.app.port }}
+          name: http
+        env:
+        - name: DB_PATH
+          value: /data/weather.db
+        volumeMounts:
+        {{- if .Values.persistence.enabled }}
+        - name: storage
+          mountPath: /data
+        {{- end }}
+        {{- if .Values.health.livenessProbe }}
+        livenessProbe:
+          httpGet:
+            path: {{ .Values.health.livenessProbe.httpGet.path }}
+            port: {{ .Values.health.livenessProbe.httpGet.port }}
+          initialDelaySeconds: {{ .Values.health.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.health.livenessProbe.periodSeconds }}
+        {{- end }}
+        {{- if .Values.health.readinessProbe }}
+        readinessProbe:
+          httpGet:
+            path: {{ .Values.health.readinessProbe.httpGet.path }}
+            port: {{ .Values.health.readinessProbe.httpGet.port }}
+          initialDelaySeconds: {{ .Values.health.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.health.readinessProbe.periodSeconds }}
+        {{- end }}
+        resources:
+          requests:
+            memory: {{ .Values.resources.requests.memory }}
+            cpu: {{ .Values.resources.requests.cpu }}
+          limits:
+            memory: {{ .Values.resources.limits.memory }}
+            cpu: {{ .Values.resources.limits.cpu }}
+      volumes:
+      {{- if .Values.persistence.enabled }}
+      - name: storage
+        persistentVolumeClaim:
+          claimName: {{ .Values.app.name }}-pvc
+      {{- end }}

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: MainChart
+description: My main helm chart for k3s weather app
+type: application
+version: 0.0.1
+appVersion: "1.0.0"
+
+keywords:
+  - weather # Поиск чарта через helm search repo weather
+
+maintainers:
+  - name: ArtemBedenkov
+    email: artich222@gmail.com
+

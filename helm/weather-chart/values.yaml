@@ -1,0 +1,53 @@
+# Общие настройки
+namespace: weather
+replicaCount: 2
+
+image:
+  repository: docker.io/temmaw/weather-app
+  tag: latest
+# при версионировании != latest = IfNotPresent
+  pullPolicy: Always
+
+app:
+  name: weather-app
+  port: 8000
+
+ingress:
+  enabled: true
+  className: traefik
+  host: weather.local
+  path: /
+  pathType: Prefix
+
+persistence:
+  enabled: true
+  size: 1Gi
+  accessMode: ReadWriteOnce
+  hostPath: /data/weather
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+resources:
+  requests:
+    memory: "64Mi"
+    cpu: "50m"
+  limits:
+    memory: "128Mi"
+    cpu: "100m"
+
+health:
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 15
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 5

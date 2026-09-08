@@ -1,0 +1,21 @@
+namespace: weather-dev
+replicaCount: 1
+
+image:
+  repository: docker.io/temmaw/weather-app
+  tag: dev
+
+ingress:
+  enabled: true
+  host: weather-dev.local
+
+persistence:
+  size: 500Mi
+
+resources:
+  requests:
+    memory: "32Mi"
+    cpu: "25m"
+  limits:
+    memory: "64Mi"
+    cpu: "50m"
