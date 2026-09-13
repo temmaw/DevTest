@@ -1,5 +1,4 @@
 namespace: weather-dev
-replicaCount: 1
 
 image:
   repository: docker.io/temmaw/weather-app

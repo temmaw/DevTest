@@ -1,6 +1,5 @@
 # Общие настройки
 namespace: weather
-replicaCount: 2
 
 image:
   repository: docker.io/temmaw/weather-app
