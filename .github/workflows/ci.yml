@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  lint-and-test:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Type check with mypy
+        run: mypy app.py
+        continue-on-error: true
+
+      - name: Run tests with coverage
+        run: pytest --cov=. --cov-report=term-missing
+
+      - name: Build Docker image (dry-run)
+        run: docker build -t weather-app:test .
