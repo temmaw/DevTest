@@ -1,11 +1,11 @@
-import sqlite3
 import os
 import re
-from datetime import datetime
-from fastapi import FastAPI, Query, HTTPException
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+import sqlite3
+
 import httpx
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="Weather Service")
 
@@ -57,18 +57,18 @@ async def get_weather(city: str = Query(..., description="City name")):
             data = response.text.strip()
             print(f"Raw data from wttr.in: '{data}'")  # Отладка
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"API error: {str(e)}")
-    
+        raise HTTPException(status_code=503, detail=f"API error: {str(e)}") from e
+
     # Улучшенный парсинг
     temp = "N/A"
     humidity = "N/A"
-    
+
     # Пробуем разные способы парсинга
-    
+
     # Способ 1: через split по '+'
     parts = [p.strip() for p in data.split('+') if p.strip()]
     print(f"Parts: {parts}")  # Для отладки
-    
+
     if len(parts) >= 2:
         # Ищем температуру (содержит °C или °F)
         for p in parts:
@@ -86,21 +86,21 @@ async def get_weather(city: str = Query(..., description="City name")):
         temp_match = re.search(r'([+-]?\d+°[CF])', data)
         if temp_match:
             temp = temp_match.group(1)
-        
+
         # Ищем влажность: цифры + %
         humid_match = re.search(r'(\d+%)', data)
         if humid_match:
             humidity = humid_match.group(1)
-    
+
     print(f"Parsed: temp={temp}, humidity={humidity}")  # Для отладки
-    
+
     with get_db() as conn:
         conn.execute(
             "INSERT INTO weather_requests (city, temperature, humidity) VALUES (?, ?, ?)",
             (city, temp, humidity)
         )
         conn.commit()
-    
+
     return {
         "city": city,
         "temperature": temp,

@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, patch
 
+
 def test_weather_success(client):
     mock_response = AsyncMock()
     mock_response.text = "+15°C+60%"
