@@ -1,37 +1,54 @@
 import os
 import re
 from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Annotated
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import Column, DateTime, Integer, String, func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import DateTime, String, func, select
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # ============================================
 # База данных
 # ============================================
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "sqlite+aiosqlite:///./data/weather.db"
+    "sqlite+aiosqlite:///./data/weather.db",
 )
 
 connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
 
 engine = create_async_engine(DATABASE_URL, echo=False, connect_args=connect_args)
-AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-Base = declarative_base()
+AsyncSessionLocal = async_sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+)
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class WeatherRequest(Base):
     __tablename__ = "weather_requests"
-    id = Column(Integer, primary_key=True, index=True)
-    city = Column(String, nullable=False)
-    temperature = Column(String)
-    humidity = Column(String)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    city: Mapped[str] = mapped_column(String, nullable=False)
+    temperature: Mapped[str | None] = mapped_column(String)
+    humidity: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
 
 
 async def get_db():
@@ -39,8 +56,11 @@ async def get_db():
         yield session
 
 
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
 # ============================================
-# Lifespan (вместо @app.on_event)
+# Lifespan
 # ============================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -50,7 +70,10 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    print(f"✅ Database initialized: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL}")
+    print(
+        f"✅ Database initialized: "
+        f"{DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL}"
+    )
     yield
     await engine.dispose()
 
@@ -75,36 +98,45 @@ def health():
 
 
 @app.get("/weather")
-async def get_weather(city: str = Query(..., description="City name"), db: AsyncSession = Depends(get_db)):
+async def get_weather(
+    city: Annotated[str, Query(..., description="City name")],
+    db: DbSession,
+):
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"https://wttr.in/{city}?format=%t+%h")
+            response = await client.get(
+                f"https://wttr.in/{city}?format=%t+%h"
+            )
             response.raise_for_status()
             data = response.text.strip()
             print(f"Raw data from wttr.in: '{data}'")
     except Exception as e:
-        raise HTTPException(status_code=503, detail=f"API error: {str(e)}") from e
+        raise HTTPException(
+            status_code=503,
+            detail=f"API error: {str(e)}",
+        ) from e
 
     temp = "N/A"
     humidity = "N/A"
 
-    parts = [p.strip() for p in data.split('+') if p.strip()]
+    parts = [p.strip() for p in data.split("+") if p.strip()]
     print(f"Parts: {parts}")
 
     if len(parts) >= 2:
         for p in parts:
-            if '°' in p or 'C' in p or 'F' in p:
+            if "°" in p or "C" in p or "F" in p:
                 temp = p.strip()
                 break
         for p in parts:
-            if '%' in p:
+            if "%" in p:
                 humidity = p.strip()
                 break
     else:
-        temp_match = re.search(r'([+-]?\d+°[CF])', data)
+        temp_match = re.search(r"([+-]?\d+°[CF])", data)
         if temp_match:
             temp = temp_match.group(1)
-        humid_match = re.search(r'(\d+%)', data)
+
+        humid_match = re.search(r"(\d+%)", data)
         if humid_match:
             humidity = humid_match.group(1)
 
@@ -118,14 +150,19 @@ async def get_weather(city: str = Query(..., description="City name"), db: Async
         "city": city,
         "temperature": temp,
         "humidity": humidity,
-        "saved": True
+        "saved": True,
     }
 
 
 @app.get("/history")
-async def history(limit: int = 10, db: AsyncSession = Depends(get_db)):
+async def history(
+    db: DbSession,
+    limit: int = 10,
+):
     result = await db.execute(
-        select(WeatherRequest).order_by(WeatherRequest.created_at.desc()).limit(limit)
+        select(WeatherRequest)
+        .order_by(WeatherRequest.created_at.desc())
+        .limit(limit)
     )
     records = result.scalars().all()
     return [
