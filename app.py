@@ -1,105 +1,119 @@
 import os
 import re
-import sqlite3
+from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import Column, Integer, String, DateTime, func, select
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import declarative_base
 
-app = FastAPI(title="Weather Service")
+
+# ============================================
+# База данных
+# ============================================
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "sqlite+aiosqlite:///./data/weather.db"
+)
+
+connect_args = {"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+
+engine = create_async_engine(DATABASE_URL, echo=False, connect_args=connect_args)
+AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+Base = declarative_base()
+
+
+class WeatherRequest(Base):
+    __tablename__ = "weather_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    city = Column(String, nullable=False)
+    temperature = Column(String)
+    humidity = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+async def get_db():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+
+# ============================================
+# Lifespan (вместо @app.on_event)
+# ============================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if "sqlite" in DATABASE_URL:
+        os.makedirs("./data", exist_ok=True)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    print(f"✅ Database initialized: {DATABASE_URL.split('@')[-1] if '@' in DATABASE_URL else DATABASE_URL}")
+    yield
+    await engine.dispose()
+
+
+app = FastAPI(title="Weather Service", lifespan=lifespan)
 
 # Фронт
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-DB_PATH = os.getenv("DB_PATH", "/data/weather.db")
 
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_db():
-    with get_db() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS weather_requests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                city TEXT NOT NULL,
-                temperature TEXT,
-                humidity TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-
-@app.on_event("startup")
-def startup():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    init_db()
-
+# ============================================
+# Эндпоинты
+# ============================================
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
+
 @app.get("/weather")
-async def get_weather(city: str = Query(..., description="City name")):
+async def get_weather(city: str = Query(..., description="City name"), db: AsyncSession = Depends(get_db)):
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            # Формат с разделителями
-            response = await client.get(
-                f"https://wttr.in/{city}?format=%t+%h"
-            )
+            response = await client.get(f"https://wttr.in/{city}?format=%t+%h")
             response.raise_for_status()
             data = response.text.strip()
-            print(f"Raw data from wttr.in: '{data}'")  # Отладка
+            print(f"Raw data from wttr.in: '{data}'")
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"API error: {str(e)}") from e
 
-    # Улучшенный парсинг
     temp = "N/A"
     humidity = "N/A"
 
-    # Пробуем разные способы парсинга
-
-    # Способ 1: через split по '+'
     parts = [p.strip() for p in data.split('+') if p.strip()]
-    print(f"Parts: {parts}")  # Для отладки
+    print(f"Parts: {parts}")
 
     if len(parts) >= 2:
-        # Ищем температуру (содержит °C или °F)
         for p in parts:
             if '°' in p or 'C' in p or 'F' in p:
                 temp = p.strip()
                 break
-        # Ищем влажность (содержит %)
         for p in parts:
             if '%' in p:
                 humidity = p.strip()
                 break
     else:
-        # Способ 2: через регулярные выражения
-        # Ищем температуру: цифры + °C или °F
         temp_match = re.search(r'([+-]?\d+°[CF])', data)
         if temp_match:
             temp = temp_match.group(1)
-
-        # Ищем влажность: цифры + %
         humid_match = re.search(r'(\d+%)', data)
         if humid_match:
             humidity = humid_match.group(1)
 
-    print(f"Parsed: temp={temp}, humidity={humidity}")  # Для отладки
+    print(f"Parsed: temp={temp}, humidity={humidity}")
 
-    with get_db() as conn:
-        conn.execute(
-            "INSERT INTO weather_requests (city, temperature, humidity) VALUES (?, ?, ?)",
-            (city, temp, humidity)
-        )
-        conn.commit()
+    record = WeatherRequest(city=city, temperature=temp, humidity=humidity)
+    db.add(record)
+    await db.commit()
 
     return {
         "city": city,
@@ -108,11 +122,20 @@ async def get_weather(city: str = Query(..., description="City name")):
         "saved": True
     }
 
+
 @app.get("/history")
-async def history(limit: int = 10):
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT city, temperature, humidity, created_at FROM weather_requests ORDER BY created_at DESC LIMIT ?",
-            (limit,)
-        ).fetchall()
-    return [dict(row) for row in rows]
+async def history(limit: int = 10, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(WeatherRequest).order_by(WeatherRequest.created_at.desc()).limit(limit)
+    )
+    records = result.scalars().all()
+    return [
+        {
+            "id": r.id,
+            "city": r.city,
+            "temperature": r.temperature,
+            "humidity": r.humidity,
+            "created_at": r.created_at,
+        }
+        for r in records
+    ]
