@@ -28,7 +28,6 @@ jobs:
 
       - name: Type check with mypy
         run: mypy app.py
-        continue-on-error: true
 
       - name: Run tests with coverage
         run: pytest --cov=. --cov-report=term-missing
